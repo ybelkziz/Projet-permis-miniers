@@ -29,7 +29,7 @@ with arcpy.da.InsertCursor(fc, ["SHAPE@", "NUM_PM"]) as cursor:
     is_first_pass = True
 
     with open(in_csv, mode="r") as csv_file:
-        csv_reader = csv.reader(csv_file, delimiter=",")
+        csv_reader = csv.reader(csv_file, delimiter=";")
         header = next(csv_reader) # Ignore la première ligne (les noms des colonnes)
         for row in csv_reader:
             # Convertir correctement les valeurs X et Y
