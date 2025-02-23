@@ -10,6 +10,8 @@ in_dir = r"C:\Users\hp\Desktop\MA FORMATION ARCPY\Projet permis miniers"
 csvFile = "permi.csv"
 fc = "minepermit"
 in_csv = os.path.join(in_dir, csvFile)
+fc_AUT_path = r"C:\Users\hp\Desktop\MA FORMATION ARCPY\Projet permis miniers\mine_permits\PM.mdb\SSM_AUTORISATIONS"
+fc_AUT_layer = "SSM_AUTORISATIONS_lyr"
 sr = arcpy.SpatialReference(102192)
 
 if arcpy.Exists(fc):
@@ -29,6 +31,9 @@ with arcpy.da.InsertCursor(fc, ["SHAPE@", "NUM_PM"]) as cursor:
     is_first_pass = True
 
     with open(in_csv, mode="r") as csv_file:
+        if not os.path.exists(in_csv):
+            print("Fichier CSV introuvable !")
+            exit()
         csv_reader = csv.reader(csv_file, delimiter=";")
         header = next(csv_reader) # Ignore la première ligne (les noms des colonnes)
         for row in csv_reader:
@@ -59,15 +64,17 @@ with arcpy.da.InsertCursor(fc, ["SHAPE@", "NUM_PM"]) as cursor:
 
     print("✔️ Traitement terminé avec succès !")
 
-    fc_AUT_path = r"C:\Users\hp\Desktop\MA FORMATION ARCPY\Projet permis miniers\mine_permits\PM.mdb\SSM_AUTORISATIONS"
-    fc_AUT_layer = "SSM_AUTORISATIONS_lyr"
+
     arcpy.MakeFeatureLayer_management(fc_AUT_path, fc_AUT_layer)
 
+    try:
+        arcpy.management.SelectLayerByLocation(fc_AUT_layer,
+                                               overlap_type = "INTERSECT" ,
+                                               select_features = fc,
+                                               selection_type="NEW_SELECTION")
+    except arcpy.ExecuteError as e:
+        print("Erreur ArcPy : {0}".format(e))
 
-    arcpy.management.SelectLayerByLocation(fc_AUT_layer,
-                                           overlap_type = "INTERSECT" ,
-                                           select_features = fc,
-                                           selection_type="NEW_SELECTION")
 
     print("{0} points sélectionnés.".format(arcpy.GetCount_management(fc_AUT_layer).getOutput(0)))
 
