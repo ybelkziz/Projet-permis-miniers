@@ -58,3 +58,17 @@ with arcpy.da.InsertCursor(fc, ["SHAPE@", "NUM_PM"]) as cursor:
             cursor.insertRow([polygon, NUM_PM_VALUE])
 
     print("✔️ Traitement terminé avec succès !")
+
+    fc_AUT_path = r"C:\Users\hp\Desktop\MA FORMATION ARCPY\Projet permis miniers\mine_permits\PM.mdb\SSM_AUTORISATIONS"
+    fc_AUT_layer = "SSM_AUTORISATIONS_lyr"
+    arcpy.MakeFeatureLayer_management(fc_AUT_path, fc_AUT_layer)
+
+
+    arcpy.management.SelectLayerByLocation(fc_AUT_layer,
+                                           overlap_type = "INTERSECT" ,
+                                           select_features = fc,
+                                           selection_type="NEW_SELECTION")
+
+    print("{0} points sélectionnés.".format(arcpy.GetCount_management(fc_AUT_layer).getOutput(0)))
+
+
