@@ -13,9 +13,13 @@ in_csv = os.path.join(in_dir, csvFile)
 fc_AUT_path = r"C:\Users\hp\Desktop\MA FORMATION ARCPY\Projet permis miniers\mine_permits\PM.mdb\SSM_AUTORISATIONS"
 fc_AUT_layer = "SSM_AUTORISATIONS_lyr"
 sr = arcpy.SpatialReference(102192)
+intersectSSMPermit = os.path.join(arcpy.env.workspace, "SSM_INT_PERMIT")
 
 if arcpy.Exists(fc):
     arcpy.Delete_management(fc)
+
+if arcpy.Exists(intersectSSMPermit):
+    arcpy.Delete_management(intersectSSMPermit)
 
 arcpy.management.CreateFeatureclass(
     arcpy.env.workspace, fc, geometry_type="POLYGON", spatial_reference=sr
@@ -30,10 +34,11 @@ with arcpy.da.InsertCursor(fc, ["SHAPE@", "NUM_PM"]) as cursor:
     NUM_PM_VALUE = None
     is_first_pass = True
 
+    if not os.path.exists(in_csv):
+        print("Fichier CSV introuvable !")
+        exit()
+
     with open(in_csv, mode="r") as csv_file:
-        if not os.path.exists(in_csv):
-            print("Fichier CSV introuvable !")
-            exit()
         csv_reader = csv.reader(csv_file, delimiter=";")
         header = next(csv_reader) # Ignore la première ligne (les noms des colonnes)
         for row in csv_reader:
@@ -78,4 +83,14 @@ with arcpy.da.InsertCursor(fc, ["SHAPE@", "NUM_PM"]) as cursor:
 
     print("{0} points sélectionnés.".format(arcpy.GetCount_management(fc_AUT_layer).getOutput(0)))
 
+    try:
+        arcpy.analysis.Intersect([fc_AUT_layer, fc],
+                                 intersectSSMPermit,
+                                 join_attributes = "ALL",
+                                 output_type = "POINT")
+        print("✔️ Intersection réussie")
 
+    except arcpy.ExecuteError as e:
+        print("Erreur lors de l'intersection : {0}".format(e))
+
+    print(" Intersection réussie")
