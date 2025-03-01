@@ -3,94 +3,145 @@ import arcpy
 import csv
 import os
 
+# Configuration
 arcpy.env.workspace = r"C:\Users\hp\Desktop\MA FORMATION ARCPY\Projet permis miniers\mine_permits\PM.mdb"
 arcpy.env.overwriteOutput = True
 
 in_dir = r"C:\Users\hp\Desktop\MA FORMATION ARCPY\Projet permis miniers"
 csvFile = "permi.csv"
-fc = "minepermit"
-in_csv = os.path.join(in_dir, csvFile)
+fc_base_name = "minepermit"
 fc_AUT_path = r"C:\Users\hp\Desktop\MA FORMATION ARCPY\Projet permis miniers\mine_permits\PM.mdb\SSM_AUTORISATIONS"
-fc_AUT_layer = "SSM_AUTORISATIONS_lyr"
-sr = arcpy.SpatialReference(102192)
 intersectSSMPermit = os.path.join(arcpy.env.workspace, "SSM_INT_PERMIT")
+y_threshold = 300000
+sr1 = arcpy.SpatialReference(102191)  # Si Y < 300000
+sr2 = arcpy.SpatialReference(102192)  # Si Y >= 300000
 
-if arcpy.Exists(fc):
-    arcpy.Delete_management(fc)
+# -----------------------------------------------------------
+# ÉTAPE 1 : Lire le CSV et déterminer les SR nécessaires
+# -----------------------------------------------------------
+in_csv = os.path.join(in_dir, csvFile)
+sr1_needed, sr2_needed = False, False
+grouped_data = {}  # Format: {(num_pm, sr): [points]}
 
-if arcpy.Exists(intersectSSMPermit):
-    arcpy.Delete_management(intersectSSMPermit)
-
-arcpy.management.CreateFeatureclass(
-    arcpy.env.workspace, fc, geometry_type="POLYGON", spatial_reference=sr
-)
-
-arcpy.management.AddField(fc, "ID", "DOUBLE")
-arcpy.management.AddField(fc, "NUM_PM", "DOUBLE")
-
-
-with arcpy.da.InsertCursor(fc, ["SHAPE@", "NUM_PM"]) as cursor:
-    point_list = []
-    NUM_PM_VALUE = None
-    is_first_pass = True
-
-    if not os.path.exists(in_csv):
-        print("Fichier CSV introuvable !")
-        exit()
-
-    with open(in_csv, mode="r") as csv_file:
+try:
+    with open(in_csv, "r") as csv_file:
         csv_reader = csv.reader(csv_file, delimiter=";")
-        header = next(csv_reader) # Ignore la première ligne (les noms des colonnes)
+        header = next(csv_reader)  # Ignorer l'en-tête
+
         for row in csv_reader:
-            # Convertir correctement les valeurs X et Y
             try:
                 X = float(row[1])
                 Y = float(row[2])
-                current_NUM_PM = float(row[3])
-            except ValueError:
+                NUM_PM = float(row[3])
+
+                # Déterminer la référence spatiale
+                if Y < y_threshold:
+                    sr = sr1
+                    sr1_needed = True
+                else:
+                    sr = sr2
+                    sr2_needed = True
+
+                key = (NUM_PM, sr)
+                if key not in grouped_data:
+                    grouped_data[key] = []
+                grouped_data[key].append(arcpy.Point(X, Y))
+
+            except (ValueError, IndexError):
                 continue
 
+except IOError:
+    print("Erreur : Fichier CSV introuvable ou illisible !")
+    exit()
 
-            if is_first_pass:
-                NUM_PM_VALUE = current_NUM_PM
-                is_first_pass = False
-            elif current_NUM_PM != NUM_PM_VALUE:
-                if point_list: # Vérifier si la liste de points n'est pas vide
-                    polygon = arcpy.Polygon(arcpy.Array(point_list), sr)
-                    cursor.insertRow([polygon, NUM_PM_VALUE])
-                NUM_PM_VALUE = current_NUM_PM
-                point_list = [] # Réinitialiser la liste des points
+# -----------------------------------------------------------
+# ÉTAPE 2 : Créer les Feature Classes nécessaires
+# -----------------------------------------------------------
+fcs_created = []
 
-            point_list.append(arcpy.Point(X, Y))
+# Supprimer les anciennes FC si elles existent
+for suffix in ["_SR1", "_SR2"]:
+    fc = fc_base_name + suffix
+    if arcpy.Exists(fc):
+        arcpy.Delete_management(fc)
 
-        if point_list:
-            polygon = arcpy.Polygon(arcpy.Array(point_list), sr)
-            cursor.insertRow([polygon, NUM_PM_VALUE])
+# Créer les nouvelles FC
+if sr1_needed:
+    fc_sr1 = fc_base_name + "_SR1"
+    arcpy.CreateFeatureclass_management(
+        arcpy.env.workspace,
+        fc_sr1,
+        "POLYGON",
+        spatial_reference=sr1
+    )
+    arcpy.AddField_management(fc_sr1, "NUM_PM", "DOUBLE")
+    fcs_created.append(fc_sr1)
 
-    print("✔️ Traitement terminé avec succès !")
+if sr2_needed:
+    fc_sr2 = fc_base_name + "_SR2"
+    arcpy.CreateFeatureclass_management(
+        arcpy.env.workspace,
+        fc_sr2,
+        "POLYGON",
+        spatial_reference=sr2
+    )
+    arcpy.AddField_management(fc_sr2, "NUM_PM", "DOUBLE")
+    fcs_created.append(fc_sr2)
+
+# -----------------------------------------------------------
+# ÉTAPE 3 : Insérer les polygones
+# -----------------------------------------------------------
+for (NUM_PM, sr), points in grouped_data.items():
+    if len(points) < 3:
+        continue  # Ignorer les groupes de moins de 3 points
+
+    fc_name = fc_base_name + ("_SR1" if sr == sr1 else "_SR2")
+
+    with arcpy.da.InsertCursor(fc_name, ["SHAPE@", "NUM_PM"]) as cursor:
+        polygon = arcpy.Polygon(arcpy.Array(points), sr)
+        cursor.insertRow([polygon, NUM_PM])
+
+print("Creation des polygones terminee dans : " + ", ".join(fcs_created))
+
+# -----------------------------------------------------------
+# ÉTAPE 4 : Selection spatiale
+# -----------------------------------------------------------
+try:
+    # Créer une couche temporaire
+    arcpy.MakeFeatureLayer_management(fc_AUT_path, "temp_layer")
+
+    # Fusionner les FC si plusieurs SR utilisées
+    if len(fcs_created) > 1:
+        merged_fc = os.path.join(arcpy.env.workspace, "Merged_Permits")
+        arcpy.Merge_management(fcs_created, merged_fc)
+        input_features = merged_fc
+    else:
+        input_features = fcs_created[0]
+
+    # Selection par localisation
+    arcpy.SelectLayerByLocation_management(
+        "temp_layer",
+        "INTERSECT",
+        input_features,
+        selection_type= "NEW_SELECTION"
+    )
+
+    # Afficher le résultat
+    count = arcpy.GetCount_management("temp_layer").getOutput(0)
+    print("Points selectionnes : " + count)
 
 
-    arcpy.MakeFeatureLayer_management(fc_AUT_path, fc_AUT_layer)
+except arcpy.ExecuteError as e:
+    print("Erreur ArcGIS : " + str(e))
 
-    try:
-        arcpy.management.SelectLayerByLocation(fc_AUT_layer,
-                                               overlap_type = "INTERSECT" ,
-                                               select_features = fc,
-                                               selection_type="NEW_SELECTION")
-    except arcpy.ExecuteError as e:
-        print("Erreur ArcPy : {0}".format(e))
+try:
+    arcpy.analysis.Intersect(["temp_layer", input_features],
+                             intersectSSMPermit,
+                             join_attributes="ALL",
+                             output_type="POINT")
+    print("✔️ Intersection réussie")
 
+except arcpy.ExecuteError as e:
+    print("Erreur lors de l'intersection : {0}".format(e))
 
-    print("{0} points sélectionnés.".format(arcpy.GetCount_management(fc_AUT_layer).getOutput(0)))
-
-    try:
-        arcpy.analysis.Intersect([fc_AUT_layer, fc],
-                                 intersectSSMPermit,
-                                 join_attributes = "ALL",
-                                 output_type = "POINT")
-        print("✔️ Intersection réussie")
-
-    except arcpy.ExecuteError as e:
-        print("Erreur lors de l'intersection : {0}".format(e))
-
-    print(" Intersection réussie")
+print(" Intersection réussie")
