@@ -2,19 +2,24 @@
 import arcpy
 import csv
 import os
+import settings
 
 # Configuration
-arcpy.env.workspace = r"C:\Users\hp\Desktop\MA FORMATION ARCPY\Projet permis miniers\mine_permits\PM.mdb"
+arcpy.env.workspace = arcpy.GetParameterAsText(0)
+
 arcpy.env.overwriteOutput = True
 
-in_dir = r"C:\Users\hp\Desktop\MA FORMATION ARCPY\Projet permis miniers"
-csvFile = "permi.csv"
+in_dir = arcpy.GetParameterAsText(1)
+csvFile = arcpy.GetParameterAsText(2)
+fc_AUT_path = arcpy.GetParameterAsText(3)
+y_threshold = float(arcpy.GetParameterAsText(4))
+
 fc_base_name = "minepermit"
-fc_AUT_path = r"C:\Users\hp\Desktop\MA FORMATION ARCPY\Projet permis miniers\mine_permits\PM.mdb\SSM_AUTORISATIONS"
 intersectSSMPermit = os.path.join(arcpy.env.workspace, "SSM_INT_PERMIT")
-y_threshold = 300000
-sr1 = arcpy.SpatialReference(102191)  # Si Y < 300000
-sr2 = arcpy.SpatialReference(102192)  # Si Y >= 300000
+
+
+sr1 = arcpy.SpatialReference(settings.SR1)  # Si Y < 300000
+sr2 = arcpy.SpatialReference(settings.SR2)  # Si Y >= 300000
 
 # -----------------------------------------------------------
 # ÉTAPE 1 : Lire le CSV et déterminer les SR nécessaires
@@ -27,6 +32,11 @@ try:
     with open(in_csv, "r") as csv_file:
         csv_reader = csv.reader(csv_file, delimiter=";")
         header = next(csv_reader)  # Ignorer l'en-tête
+
+        required_columns = ["BORNE", "X", "Y", "NUM_PM"]
+        if header != required_columns:
+            print("Erreur : Colonnes manquantes dans le CSV.")
+            exit()
 
         for row in csv_reader:
             try:
@@ -145,3 +155,4 @@ except arcpy.ExecuteError as e:
     print("Erreur lors de l'intersection : {0}".format(e))
 
 print(" Intersection réussie")
+
