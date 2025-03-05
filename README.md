@@ -53,7 +53,7 @@ Clone the Repository :
 
 bash
 Copy
-git clone [https://github.com/your_username/Mining-Permits-Project.git  ](https://github.com/ybelkziz/Projet-permis-miniers.git)
+git clone https://github.com/ybelkziz/Projet-permis-miniers.git
 cd Mining-Permits-Project  
 Configuration :
 
